@@ -1,7 +1,7 @@
 """
 Final MIS workbook writer.
 
-Copies the supplied template and writes:
+Creates the final output workbook with:
 - Export AWB-level detail
 - Import AWB-level detail
 - Month_Summary
@@ -9,10 +9,9 @@ Copies the supplied template and writes:
 """
 
 from pathlib import Path
-import shutil
 
 import pandas as pd
-from openpyxl import load_workbook
+from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
@@ -36,6 +35,7 @@ SUMMARY_COLUMNS = [
 
 def build_month_summary(dataframe):
     """Create Airline x Month x Direction totals."""
+
     if dataframe.empty:
         return pd.DataFrame(columns=SUMMARY_COLUMNS)
 
@@ -84,18 +84,8 @@ def build_month_summary(dataframe):
     return summary[SUMMARY_COLUMNS]
 
 
-def clear_sheet(worksheet):
-    """Remove all existing rows from a worksheet."""
-    if worksheet.max_row > 0:
-        worksheet.delete_rows(
-            1,
-            worksheet.max_row,
-        )
-
-
 def write_dataframe(worksheet, dataframe):
     """Write a DataFrame to an openpyxl worksheet."""
-    clear_sheet(worksheet)
 
     for column_index, column_name in enumerate(
         dataframe.columns,
@@ -147,7 +137,9 @@ def write_dataframe(worksheet, dataframe):
             )
 
     worksheet.freeze_panes = "A2"
-    worksheet.auto_filter.ref = worksheet.dimensions
+
+    if worksheet.max_row >= 1:
+        worksheet.auto_filter.ref = worksheet.dimensions
 
     format_worksheet(
         worksheet,
@@ -157,6 +149,7 @@ def write_dataframe(worksheet, dataframe):
 
 def format_worksheet(worksheet, columns):
     """Apply practical MIS formatting."""
+
     for index, column_name in enumerate(
         columns,
         start=1,
@@ -217,33 +210,14 @@ def format_worksheet(worksheet, columns):
     worksheet.row_dimensions[1].height = 32
 
 
-def get_or_create_sheet(workbook, sheet_name):
-    """Return an existing sheet or create a new one."""
-    if sheet_name in workbook.sheetnames:
-        return workbook[sheet_name]
-
-    return workbook.create_sheet(
-        title=sheet_name
-    )
-
-
 def write_output_workbook(
     base_dir,
     consolidated_df,
     reconciliation_df,
 ):
     """Generate the final consolidated MIS workbook."""
+
     base_path = Path(base_dir)
-
-    template_path = (
-        base_path
-        / "MIS_Consolidated_TEMPLATE.xlsx"
-    )
-
-    if not template_path.exists():
-        raise FileNotFoundError(
-            f"Template not found: {template_path}"
-        )
 
     output_dir = base_path / "output"
 
@@ -255,15 +229,6 @@ def write_output_workbook(
     output_path = (
         output_dir
         / OUTPUT_FILE_NAME
-    )
-
-    shutil.copy2(
-        template_path,
-        output_path,
-    )
-
-    workbook = load_workbook(
-        output_path
     )
 
     export_df = consolidated_df[
@@ -286,24 +251,21 @@ def write_output_workbook(
         consolidated_df
     )
 
-    export_sheet = get_or_create_sheet(
-        workbook,
-        "Export",
+    workbook = Workbook()
+
+    export_sheet = workbook.active
+    export_sheet.title = "Export"
+
+    import_sheet = workbook.create_sheet(
+        title="Import"
     )
 
-    import_sheet = get_or_create_sheet(
-        workbook,
-        "Import",
+    summary_sheet = workbook.create_sheet(
+        title="Month_Summary"
     )
 
-    summary_sheet = get_or_create_sheet(
-        workbook,
-        "Month_Summary",
-    )
-
-    reconciliation_sheet = get_or_create_sheet(
-        workbook,
-        "Reconciliation",
+    reconciliation_sheet = workbook.create_sheet(
+        title="Reconciliation"
     )
 
     write_dataframe(
@@ -325,6 +287,8 @@ def write_output_workbook(
         reconciliation_sheet,
         reconciliation_df,
     )
+
+    workbook.active = 0
 
     workbook.save(
         output_path
